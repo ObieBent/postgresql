@@ -1,0 +1,11 @@
+---
+
+- name: Reload systemd
+  systemd:
+    daemon_reload: yes
+
+- name: restart postgresql
+  service:
+    name:  "{{ postgresql_service_name }}"
+    state: restarted
+  when: not manage_by_cluster

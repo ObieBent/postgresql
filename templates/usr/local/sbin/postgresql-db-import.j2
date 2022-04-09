@@ -1,0 +1,115 @@
+#!/bin/bash
+PGSQL_CMD="psql"
+POSTGRES_USER="{{ postgresql_admin_user }}"
+TABLE_IMPORT_NAME="_import_sql"
+DB_NAME=""
+SQL_FILES=""
+
+register=0
+
+function syntax() {
+    cat <<EOF
+Script to import SQL files in database.
+SQL queries must be separated by semi-colons
+
+Usage: ${0##*/} [-h|-d <db_name>][-f <filename|dirname>] [-r]
+    -h                     Display this message
+    -d <db_name>           Database name
+    -f <filename|dirname>  Import SQL file or all SQL file in dirname
+    -r                     Register file already import in $TABLE_IMPORT_NAME. Usefull for CI/CD workflow.
+EOF
+}
+
+function exec_cmd() {
+    local cmd="$@"
+
+    # Backup must be done with postgresql admin user, if not try to switch to this user
+    if [ "$USER" != "$POSTGRES_USER" ]; then
+        if [ "$UID" -eq 0 ]; then
+            su - $POSTGRES_USER -c "${cmd}"
+            return $?
+        else
+            >&2
+            echo "Script must be run with root or $POSTGRES_USER user. Abording backup..."
+            exit 1
+        fi
+    else
+        eval ${cmd}
+        return $?
+    fi
+}
+
+while getopts "hd:f:r" OPT; do
+    case $OPT in
+        h)
+            syntax
+            exit 0
+            ;;
+        d)
+            DB_NAME="${OPTARG}"
+            ;;
+        f)
+            SQL_FILES="${OPTARG}"
+            ;;
+        r)
+            register=1
+            ;;
+        *)
+            echo "Unknown option."
+            syntax
+            exit 1
+            ;;
+    esac
+done
+
+
+if [[ -z $DB_NAME ]] || [[ -z $SQL_FILES ]]; then
+    syntax
+    exit 1
+fi
+
+if [[ ! `command -v psql` ]]; then
+    echo "Client \"psql\" not found. Try to install it with :
+    \"apt-get install postgresql\" on Debian system
+    \"yum install postgresql\" on CentOS"
+    exit 1
+fi
+
+db_exist=$(exec_cmd "$PGSQL_CMD -At -c \"SELECT 1 FROM pg_database WHERE datname='$DB_NAME'\"")
+
+if [ "$db_exist" != "1" ] ; then
+    `dirname $0`/postgresql-db-create -d $DB_NAME
+fi
+
+if [ $register -eq 1 ]; then
+    exec_cmd "$PGSQL_CMD -Atq -d $DB_NAME -c \"CREATE TABLE IF NOT EXISTS $TABLE_IMPORT_NAME (id serial primary key, file varchar(100) not null)\""
+fi
+
+for sql in `find $SQL_FILES -name "*.sql" -type f | sort -n`
+do
+    echo -n "Import '$sql' in '$DB_NAME': "
+
+    if [ $register -eq 1 ]; then
+        filename=$(basename $sql)
+        is_import=$(exec_cmd "$PGSQL_CMD -Atq -d $DB_NAME -c \"SELECT COUNT(*) FROM ${TABLE_IMPORT_NAME} WHERE file='$filename'\"")
+    else
+        is_import=0
+    fi
+    
+    if [ $is_import -eq 0  ]; then
+        exec_cmd "$PGSQL_CMD -Atq -v ON_ERROR_STOP=1 -d $DB_NAME < $sql"
+
+        # Test if $imported contains created,insert,alter
+        if [ $? -eq 0 ]; then
+            echo "done"
+            if [ $register -eq 1 ]; then 
+                exec_cmd "$PGSQL_CMD -Atq -d $DB_NAME -c \"INSERT INTO $TABLE_IMPORT_NAME (file) VALUES ('$filename')\""
+            fi
+        else
+            echo "failed"
+	    exit 1
+        fi
+    else
+        echo "already imported"
+    fi
+done

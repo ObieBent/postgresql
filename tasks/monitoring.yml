@@ -1,0 +1,7 @@
+---
+- name: monitoring | Create PostgreSQL monitoring user
+  postgresql_user:
+    name:     "{{ postgresql_monitoring_user }}"
+    password: "{{ postgresql_monitoring_pass }}"
+  become: yes
+  become_user: "{{ postgresql_admin_user }}"

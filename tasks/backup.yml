@@ -1,0 +1,70 @@
+---
+- name: backup | Deploy postgresql backup scripts
+  tags: script
+  template:
+    src: "usr/local/sbin/{{ item }}.j2"
+    dest: "/usr/local/sbin/{{ item }}"
+    owner: root
+    group: root
+    mode:  0755
+  with_items:
+    - postgresql-backup-clean
+    - postgresql-backup-dump
+    - postgresql-backup-restore
+    - postgresql-db-create
+    - postgresql-db-import
+
+- name: backup | Create cron job for backups
+  tags: script
+  cron:
+    name:   "Postgresql create backup"
+    hour:   0
+    minute: 5
+    user:   "{{ postgresql_admin_user }}"
+    job:    "{{ postgresql_script_dir }}/postgresql-backup-dump"
+    cron_file: "postgresql-backup"
+  when: postgresql_enable_cron_backup
+
+- name: backup | Create cron job to purge old backups
+  tags: script
+  cron:
+    name:   "Postgresql purge dump file"
+    hour:   0
+    minute: 4
+    user:   "{{ postgresql_admin_user }}"
+    job:    "{{ postgresql_script_dir }}/postgresql-backup-clean -o {{ postgresql_backup_age }}"
+    cron_file: "postgresql-backup"
+  when: postgresql_enable_cron_backup
+
+- name: backup | Check if {{ postgresql_backup_dir }} backup directory exists
+  stat:
+    path: "{{ postgresql_backup_dir }}"
+  register: backup_dir
+
+- name: backup | Create backup directory
+  file:
+    state:   directory
+    path:    "{{ postgresql_backup_dir }}"
+    owner:   "{{ postgresql_admin_user }}"
+    group:   "{{ postgresql_admin_group }}"
+    recurse: yes
+  when: not backup_dir.stat.exists
+
+- name: backup | Create default backup directory
+  file:
+    state:   directory
+    path:    "{{ postgresql_default_backup_dir | dirname }}"
+    recurse: yes
+
+- name: backup | Remove backup directory
+  file:
+    state: absent
+    path:  "{{ postgresql_default_backup_dir }}"
+  when: postgresql_backup_dir != postgresql_default_backup_dir and postgresql_force_remove_backup_dir
+
+- name: backup | Create symlink from {{ postgresql_default_backup_dir }} to backup directory
+  file:
+    state: link
+    src:   "{{ postgresql_backup_dir }}"
+    dest:  "{{ postgresql_default_backup_dir }}"
+  when: postgresql_backup_dir != postgresql_default_backup_dir

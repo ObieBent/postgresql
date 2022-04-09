@@ -1,0 +1,30 @@
+---
+- name: sysctl | Avoid letting too much data waiting in memory (vm.dirty_background_ratio)
+  sysctl:
+    name:  vm.dirty_background_ratio
+    value: "{{ postgresql_sysctl_vm_dirty_background_ratio | int }}"
+
+- name: sysctl | Avoid saturation of the disk during write time (vm.dirty_ratio)
+  sysctl:
+    name:  vm.dirty_ratio
+    value: "{{ postgresql_sysctl_vm_dirty_ratio | int }}"
+
+- name: sysctl | Push down the swap usage, which is not good for postgresql (vm.swappiness)
+  sysctl:
+    name:  vm.swappiness
+    value: "{{ postgresql_sysctl_vm_swappiness | int }}"
+
+- name: sysctl | This allocation mechanism is useless for postgresql (vm.zone_reclaim_mode)
+  sysctl:
+    name: vm.zone_reclaim_mode
+    value: "{{ postgresql_sysctl_vm_zone_reclaim_mode | int }}"
+
+- name: sysctl | Maximum size of shared memory segment in bytes (kernel.shmmax)
+  sysctl:
+    name:  kernel.shmmax
+    value: "{{ postgresql_sysctl_kernel_shmmax | int }}"
+
+- name: sysctl | Total amount of shared memory available in pages of 4K (kernel.shmall)
+  sysctl:
+    name:  kernel.shmall
+    value: "{{ postgresql_sysctl_kernel_shmall | int }}"

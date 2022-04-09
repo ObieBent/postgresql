@@ -1,0 +1,13 @@
+---
+postgresql_home_dir: "/var/lib/pgsql"
+postgresql_repo_release_min: "{{ '2' if postgresql_version >= 10 else '3' }}"
+postgresql_default_data_dir: "{{ postgresql_home_dir }}/{{ postgresql_version }}/data"
+postgresql_default_repo_url: "https://download.postgresql.org/pub/repos/yum/reporpms/EL-7-x86_64/pgdg-redhat-repo-latest.noarch.rpm"
+postgresql_default_packages:
+  - "postgresql{{ postgresql_version_short }}-server"
+  - "postgresql{{ postgresql_version_short }}-contrib"
+  - python-psycopg2
+  - sudo
+
+postgresql_selinux_packages:
+  - policycoreutils-python

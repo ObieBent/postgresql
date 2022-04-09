@@ -1,0 +1,85 @@
+#!/bin/bash
+
+PGDATA="{{ postgresql_data_dir }}"
+BACKUP_COMPRESSION="{{ postgresql_backup_compression }}"
+POSTGRES_USER="{{ postgresql_admin_user }}"
+
+function syntax() {
+    cat <<EOF
+Script to restore PostgreSQL from compress dump file. By default, database is created if it doesn't exist, otiherwise dump is restore on existing database.
+
+Usage: ${0##*/} [-h|-f <dumpfile>]
+    -h             Display this message
+    -f <dumpfile>  Dump file to restore
+EOF
+}
+
+function exec_cmd() {
+    local cmd="$@"
+
+    # Backup must be done with postgresql admin user, if not try to switch to this user
+    if [ "$USER" != "$POSTGRES_USER" ]; then
+        if [ "$UID" -eq 0 ]; then
+            su - $POSTGRES_USER -c "${cmd}"
+            return $?
+        else
+            >&2
+            echo "Script must be run with root or $POSTGRES_USER user. Abording..."
+            exit 1
+        fi
+    else
+        eval ${cmd}
+        return $?
+    fi
+}
+
+function restore_db() {
+    local dumpfile=$1
+
+    case "$BACKUP_COMPRESSION" in
+        gzip)
+            _options="-dc"
+            ;;
+        *)
+            echo "$BACKUP_COMPRESSION not supported for restauration. Try to used gzip compress file"
+            exit 1
+            ;;
+    esac
+
+    exec_cmd "${BACKUP_COMPRESSION} ${_options} ${dumpfile} | psql"
+}
+
+if [ $# -eq 0 ]; then
+    syntax
+    exit 1
+fi
+
+while getopts "hf:" OPT; do
+    case $OPT in
+        h)
+            syntax
+            exit 0
+            ;;
+        f)
+            FILENAME="${OPTARG}"
+            ;;
+        *)
+            echo "Unknown option."
+            syntax
+            exit 1
+            ;;
+    esac
+done
+
+if [[ -z $FILENAME ]]; then
+    syntax
+    exit 1
+fi
+
+if [ -r "${FILENAME}" ]; then
+    restore_db ${FILENAME}
+else
+    >&2
+    echo "Could not read dump file: ${FILENAME}"
+    exit 1
+fi

@@ -1,0 +1,126 @@
+#!/bin/bash
+
+PGDATA="{{ postgresql_data_dir }}"
+BACKUP_DIR="{{ postgresql_backup_dir }}"
+BACKUP_OPTS="{{ postgresql_backup_opts }}"
+BACKUP_COMPRESSION="{{ postgresql_backup_compression }}"
+POSTGRES_USER="{{ postgresql_admin_user }}"
+
+DATE=$(date '+%Y%m%d_%H%M')
+DB_QUERY="select datname from pg_database where not datistemplate and datallowconn order by datname;"
+
+function syntax() {
+    cat <<EOF
+Script to backup PostgreSQL databases
+
+Usage: ${0##*/} [-h|-n <db>]
+    -h        Display this message
+    -n <db>   Back up a specific database
+EOF
+}
+
+function log() {
+  echo `date "+%Y-%d-%m %H:%M:%S"`": $1"
+}
+
+function exec_cmd() {
+    local cmd="$@"
+
+    # Backup must be done with postgresql admin user, if not try to switch to this user
+    if [ "$USER" != "$POSTGRES_USER" ]; then
+        if [ "$UID" -eq 0 ]; then
+            su - $POSTGRES_USER -c "${cmd}"
+            return $?
+        else
+            >&2
+            echo "Script must be run with root or $POSTGRES_USER user. Abording..."
+            exit 1
+        fi
+    else
+        eval ${cmd}
+        return $?
+    fi
+}
+
+function backup_db() {
+    local dbname=$1
+
+    if [ ! -d ${BACKUP_DIR} ]; then
+        mkdir -p ${BACKUP_DIR} || return 2
+    fi
+
+    case "$BACKUP_COMPRESSION" in
+        gzip)
+            _suffix="gz"
+            ;;
+        bzip*)
+            _suffix="bz2"
+            ;;
+        xz)
+            _suffix="xz"
+            ;;
+        *)
+            _suffix=""
+            ;;
+    esac
+
+    exec_cmd "pg_dump ${BACKUP_OPTS} ${dbname} | ${BACKUP_COMPRESSION} > ${BACKUP_DIR}/backupdb-${dbname}-${DATE}.sql.${_suffix}"
+
+    if [ $? -ne 0 ]; then
+	echo "Failed to dump $dbname."
+	exit 1
+    fi
+}
+
+function backup_all_db() {
+    for db in $(exec_cmd "psql -At -c '${DB_QUERY}' postgres")
+    do
+        backup_db ${db}
+    done
+}
+
+while getopts "hn:" OPT; do
+    case $OPT in
+        h)
+            syntax
+            exit 0
+            ;;
+        n)
+            NAME="${OPTARG}"
+            ;;
+        *)
+            echo "Unknown option."
+            syntax
+            exit 1
+            ;;
+    esac
+done
+
+# Execute backup only if we are master/not in cluster
+if [ $(command -v cluster-state) ]; then
+    # Server status
+    HB_STATE=$(if [[ $(cluster-state) == '[master]' ]] ; then echo 'master' ; else echo 'backup' ; fi ; )
+
+    case $HB_STATE in
+        backup)
+            echo "This server isn't master on the cluster, stopping backup."
+            exit 0;
+        ;;
+        master)
+            echo "This server is master, starting backup process."
+        ;;
+        *)
+            echo "Unknown state: $HB_STATE";
+            exit 0;
+        ;;
+    esac
+else
+    HB_STATE="BACKUP"
+    log "Crm isn't configured on this server, forcing backup state"
+fi
+
+if [ -n "${NAME}" ]; then
+    backup_db ${NAME}
+else
+    backup_all_db
+fi

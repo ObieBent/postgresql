@@ -1,0 +1,14 @@
+---
+- name: Converge
+  hosts: all
+  roles:
+    - role: basic-firewalld
+    - role: postgresql
+      postgresql_databases:
+        - name: "odoo"
+      postgresql_users:
+        - name: odoo
+          password: "y6uC65m91CMO2"
+          db: "odoo"
+          priv: ALL
+

@@ -1,0 +1,44 @@
+---
+
+- name: install | Install postgresql official repository
+  package:
+    name:  "{{ item }}"
+  with_items: "{{ postgresql_repo_url }}"
+  register: postgresql_install_packages
+  when: use_satellite_repo == False
+
+- name: install | Install postgresql packages
+  package:
+    name:  "{{ item }}"
+  with_items: "{{ postgresql_packages }}"
+  register: postgresql_install_packages
+
+- name: install | Update pgdata bash_profile
+  lineinfile:
+    dest: "{{ postgresql_home_dir }}/.bash_profile"
+    regexp: "^PGDATA="
+    line:   "PGDATA={{ postgresql_data_dir }}"
+    backup: yes
+
+- name: install | Stat PG_VERSION file
+  stat:
+    path: "{{ postgresql_conf_dir }}/PG_VERSION"
+  register: pg_version
+  tags: always
+
+- name: install | Initialize postgresql if necessary
+  shell: "/usr/pgsql-{{ postgresql_version }}/bin/postgresql*{{ postgresql_version_short }}-setup initdb"
+  args:
+    creates: "{{ postgresql_conf_dir }}/PG_VERSION"
+  notify: restart postgresql
+  when: not pg_version.stat.exists
+
+- name: config | Move configuraiton file to etc directory
+  command: mv {{ postgresql_data_dir }}/postgresql.conf {{ postgresql_conf_dir }}
+  notify: restart postgresql
+  when: not pg_version.stat.exists
+
+- name: install | Create PG_VERSION file
+  copy:
+    content: "{{ postgresql_version }}"
+    dest: "{{ postgresql_conf_dir }}/PG_VERSION"

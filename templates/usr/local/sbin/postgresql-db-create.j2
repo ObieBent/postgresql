@@ -1,0 +1,110 @@
+#!/bin/bash
+
+PGSQL_CMD="psql"
+POSTGRES_USER="{{ postgresql_admin_user }}"
+DB_NAME=""
+DB_USER=""
+DB_PASS=""
+
+create_user=0
+
+function syntax() {
+    cat <<EOF
+Script to create new database application
+
+Usage: ${0##*/} [-h|-d <db_name>][-u <user_name>][-p <user_pass>]
+    -h                 Display this message
+    -d <db_name>       Database name
+    -u <user_name>     User name used to connect to database
+    -p <user_pass>     User password used to connect to database (default: user_name)
+EOF
+}
+
+function exec_cmd() {
+    local cmd="$@"
+
+    # Backup must be done with postgresql admin user, if not try to switch to this user
+    if [ "$USER" != "$POSTGRES_USER" ]; then
+        if [ "$UID" -eq 0 ]; then
+            su - $POSTGRES_USER -c "${cmd}"
+            return $?
+        else
+            >&2
+            echo "Script must be run with root or $POSTGRES_USER user. Abording backup..."
+            exit 1
+        fi
+    else
+        eval ${cmd}
+        return $?
+    fi
+}
+
+while getopts "hd:u:p:" OPT; do
+    case $OPT in
+        h)
+            syntax
+            exit 0
+            ;;
+        d)
+            DB_NAME="${OPTARG}"
+           ;;
+        u)
+            DB_USER="${OPTARG}"
+            create_user=1
+           ;;
+        p)
+            DB_PASS="${OPTARG}"
+           ;;
+        *)
+            echo "Unknown option."
+            syntax
+            exit 1
+            ;;
+    esac
+done
+
+
+if [[ -z $DB_NAME ]]; then
+    syntax
+    exit 1
+fi
+
+if [[ -z $DB_USER ]] && [[ $create_user -eq 1 ]]; then
+    DB_USER=$DB_NAME
+    if [ -z $DB_PASS ]; then
+        DB_PASS=$DB_USER
+    fi
+fi
+
+if [[ -n $DB_PASS ]]; then
+    EXTRA_OPT="-p $DB_PASS"
+fi
+
+if [[ ! `command -v psql` ]]; then
+    echo "psql Command not found. Try to install it with :
+    \"apt-get install postgresql\" on Debian system
+    \"yum install postgresql\" on CentOS"
+    exit 1
+fi
+
+db_exist=$(exec_cmd "$PGSQL_CMD -At -c \"SELECT 1 FROM pg_database WHERE datname='$DB_NAME'\"")
+
+if [ "$db_exist" != "1" ] ; then
+    echo "Create database: $DB_NAME"
+    exec_cmd "$PGSQL_CMD -Atq -c \"CREATE DATABASE $DB_NAME\""
+else
+    echo "Database $DB_NAME already exist"
+fi
+
+if [ $create_user -eq 1 ]; then
+    user_exist=$(exec_cmd "$PGSQL_CMD -At -c \"SELECT 1 FROM pg_shadow WHERE usename='$DB_USER'\"")
+
+    if [ "$user_exist" != 1 ]; then
+        echo "Create user '$DB_USER' to access database '$DB_NAME'"
+        exec_cmd "$PGSQL_CMD -Atq -c \"CREATE USER $DB_USER WITH PASSWORD '$DB_PASS'\""
+    else
+        echo "User $DB_USER already exist"
+    fi
+
+    exec_cmd "$PGSQL_CMD -Atq -c \"GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER\""
+fi

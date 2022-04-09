@@ -1,0 +1,81 @@
+---
+
+- name: preconfig | Dsiable postgresql dnf module
+  command: dnf module disable postgresql -y
+  changed_when: false
+  when: ansible_distribution_major_version | int >= 8
+
+- name: preconfig | Install SELinux package
+  package:
+    name:  "{{ postgresql_selinux_packages }}"
+    state: present
+  when: ansible_selinux and ansible_selinux.status == "enabled"
+
+#
+# PostgreSQL data directory
+#
+- name: preconfig | Check if {{ postgresql_data_dir }} data directory exists
+  stat:
+    path: "{{ postgresql_data_dir }}"
+  register: data_dir
+
+- name: preconfig | Create {{ postgresql_data_dir }} data directory
+  file:
+    state:   directory
+    path:    "{{ postgresql_data_dir }}"
+    setype:  postgresql_db_t
+    recurse: yes
+  when: not data_dir.stat.exists
+
+- name: preconfig | Create {{ postgresql_default_data_dir | dirname }} home directory
+  file:
+    state:   directory
+    path:    "{{ postgresql_default_data_dir | dirname }}"
+    setype:  postgresql_db_t
+    recurse: yes
+
+- name: preconfig | Create symlink from {{ postgresql_default_data_dir }} to {{ postgresql_data_dir }} data directory
+  file:
+    state: link
+    src:   "{{ postgresql_data_dir }}"
+    dest:  "{{ postgresql_default_data_dir }}"
+    force: true
+  when:  postgresql_data_dir != postgresql_default_data_dir
+
+- name: preconfig | Set SELinux context
+  sefcontext:
+    target: "{{ postgresql_data_dir }}(/.*)?"
+    setype: postgresql_db_t
+    state:  present
+  when: postgresql_data_dir != postgresql_default_data_dir and ansible_selinux and ansible_selinux.status == "enabled"
+
+#
+# PostgreSQL configuration directory
+#
+- name: preconfig | Check if {{ postgresql_conf_dir }} config directory exists
+  stat:
+    path: "{{ postgresql_conf_dir }}"
+  register: config_dir
+
+- name: preconfig | Create {{ postgresql_conf_dir }} config directory
+  file:
+    state:   directory
+    path:    "{{ postgresql_conf_dir }}"
+    setype:  postgresql_etc_t
+    recurse: yes
+  when: not config_dir.stat.exists
+
+- name: preconfig | Create symlink from {{ postgresql_default_conf_dir }} to {{ postgresql_conf_dir }} config directory
+  file:
+    state: link
+    src:   "{{ postgresql_conf_dir }}"
+    dest:  "{{ postgresql_default_conf_dir }}"
+    force: true
+  when:  postgresql_conf_dir != postgresql_default_conf_dir
+
+- name: preconfig | Set SELinux context
+  sefcontext:
+    target: "{{ postgresql_conf_dir }}(/.*)?"
+    setype: postgresql_etc_t
+    state:  present
+  when: postgresql_conf_dir != postgresql_default_conf_dir and ansible_selinux and ansible_selinux.status == "enabled"

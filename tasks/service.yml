@@ -1,0 +1,23 @@
+---
+
+- name: "service | Link {{ postgresql_service_name }} to postgresql"
+  file:
+    src: "/usr/lib/systemd/system/{{ postgresql_service_name }}.service"
+    dest: /usr/lib/systemd/system/postgresql.service
+    state: link
+    force: yes
+  notify:
+    - "Reload systemd"
+
+- name: "service | Enable and start postgresql"
+  service:
+    name:    "{{ postgresql_service_name }}"
+    enabled: yes
+    state:   started
+  when: not manage_by_cluster
+
+- name: service | Check if PostgreSQL is running
+  shell: "systemctl status {{ postgresql_service_name }} > /dev/null 2>&1 && echo started || echo stopped"
+  changed_when: false
+  check_mode: no
+  register: postgresql_running

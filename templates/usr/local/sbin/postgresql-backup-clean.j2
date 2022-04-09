@@ -1,0 +1,37 @@
+#!/bin/bash
+
+BACKUP_DIR="{{ postgresql_backup_dir }}"
+BACKUP_AGE="{{ postgresql_backup_age }}"
+
+function syntax() {
+    cat <<EOF
+Script to purge PostgreSQL dump.
+
+Usage: ${0##*/} [-h|-o <days>]
+    -h           Display this message
+    -o <days>    Purge dump older than n days. If not specified, purge all dump.
+EOF
+}
+
+while getopts "ho:" OPT; do
+    case $OPT in
+        h)
+            syntax
+            exit 0
+            ;;
+        o)
+            BACKUP_AGE="${OPTARG}"
+            ;;
+        *)
+            echo "Unknown option."
+            syntax
+            exit 1
+            ;;
+    esac
+done
+
+# Deleting old backups and keeping 1 log
+echo "Removing following backup:"
+find $BACKUP_DIR -regex "${BACKUP_DIR}/backupdb-.*.sql.gz" -type f -mmin +$((${BACKUP_AGE}*1440)) -print -exec rm -f {} \; 2>&1
+
+exit $?

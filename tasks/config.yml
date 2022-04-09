@@ -1,0 +1,83 @@
+---
+
+- name: config | Set permissions on postgresql config dir
+  tags: config
+  file:
+    path:  "{{ item }}"
+    state: directory
+    owner: "{{ postgresql_admin_user }}"
+    group: root
+    mode:  0750
+  with_items:
+    - "{{ postgresql_conf_dir }}"
+    - "{{ postgresql_conf_dir }}/conf.d"
+
+- name: config | Deploy postgresql pg_hba configuration files
+  tags: config
+  template:
+    src:   "etc/postgresql/{{ item }}.conf.j2"
+    dest:  "{{ postgresql_conf_dir }}/{{ item }}.conf"
+    owner: "{{ postgresql_admin_user }}"
+    group: root
+    mode:  0640
+    backup: yes
+  with_items:
+    - pg_hba
+  notify: restart postgresql
+
+- name: config | Deploy postgresql default configuration files
+  tags: config
+  template:
+    src:   "etc/postgresql/conf.d/{{ item }}.conf.j2"
+    dest:  "{{ postgresql_conf_dir }}/conf.d/{{ item }}.conf"
+    owner: "{{ postgresql_admin_user }}"
+    group: root
+    mode:  0640
+  with_items:
+    - 01-default
+  notify: restart postgresql
+
+- name: config | Deploy empty custom configuration file if it does not exist
+  tags: config
+  copy:
+    content: ""
+    dest:    "{{ postgresql_conf_dir }}/conf.d/02-custom.conf"
+    owner:   "{{ postgresql_admin_user }}"
+    group:   root
+    mode:    0640
+    force:   no
+
+- name: config | Symlink postgresql configuration files
+  tags: config
+  file:
+    state: link
+    src:   "{{ postgresql_conf_dir }}/{{ item }}.conf"
+    dest:  "{{ postgresql_data_dir }}/{{ item }}.conf"
+    owner: "{{ postgresql_admin_user }}"
+    force: yes
+  with_items:
+    - pg_hba
+    - postgresql
+  notify: restart postgresql
+
+- name: config | Include conf.d directory in main configuration file
+  tags: config
+  lineinfile:
+    dest:   "{{ postgresql_conf_dir }}/postgresql.conf"
+    regexp: "^include '{{ postgresql_conf_dir }}/conf.d/01-default.conf'"
+    line:   "include '{{ postgresql_conf_dir }}/conf.d/01-default.conf'"
+  notify: restart postgresql
+
+- name: config | stats {{ postgresql_data_dir }}
+  stat:
+    path:   "{{ postgresql_data_dir }}"
+  register: data_dir
+
+- name: config | Set permissions on postgresql data dir
+  file:
+    path:  "{{ postgresql_data_dir }}"
+    state: directory
+    owner: "{{ postgresql_admin_user }}"
+    group: "{{ postgresql_admin_group }}"
+    mode:  0700
+  when: not data_dir.stat.exists
