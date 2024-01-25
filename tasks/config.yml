@@ -52,7 +52,7 @@
   file:
     state: link
     src:   "{{ postgresql_conf_dir }}/{{ item }}.conf"
-    dest:  "{{ postgresql_data_dir }}/{{ item }}.conf"
+    dest:  "{{ postgresql_data_dir }}/{{ item }}.conf"
     owner: "{{ postgresql_admin_user }}"
     force: yes
   with_items:

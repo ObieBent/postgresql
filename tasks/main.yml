@@ -15,35 +15,35 @@
       paths: '../vars'
   tags: always
 
-- include: preconfig.yml
+- include_tasks: preconfig.yml
   tags: config
 
-- include: sysctl.yml
+- include_tasks: sysctl.yml
   tags: config
 
-- include: install.yml
+- include_tasks: install.yml
   tags: install
 
-- include: "{{ ansible_os_family }}.yml"
+- include_tasks: "{{ ansible_os_family }}.yml"
 
-- include: config.yml
+- include_tasks: config.yml
   tags: config
 
-- include: service.yml
+- include_tasks: service.yml
   tags:
     - monitoring
     - service
     - db
 
-- include: databases.yml
+- include_tasks: databases.yml
   tags: db
   when:
     - "'started' in postgresql_running.stdout"
 
-- include: backup.yml
+- include_tasks: backup.yml
   tags: backup
 
-- include: monitoring.yml
+- include_tasks: monitoring.yml
   tags: monitoring
   when:
     - postgresql_monitoring_enable == True
